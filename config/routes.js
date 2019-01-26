@@ -1,5 +1,6 @@
 const axios = require('axios');
 const bcrypt = require('bcryptjs')
+const jwt = require('jsonwebtoken')
 
 const { authenticate } = require('../auth/authenticate');
 const usersDb = require('../database/userHelpers')
@@ -10,16 +11,35 @@ module.exports = server => {
   server.get('/api/jokes', authenticate, getJokes);
 };
 
+const secret = process.env.JWT_SECRET
+const generateToken = (user) => {
+  const payload = {
+    username: user.username
+  };
+
+  const options = {
+    expiresIn: '30m',
+    jwtid: '789123'
+  }
+  return jwt.sign(payload, secret, options)
+}
+
 function register(req, res) {
   // implement user registration
-  const credentials = req.body
-  console.log(credentials)
+  const credentials = req.body;
+  
   const hash = bcrypt.hashSync(credentials.password, 12);
   credentials.password = hash
 
   usersDb.addUser(credentials)
     .then( ids => {
-      console.log(ids)
+      const id = ids[0]
+
+      usersDb.getUserById(id)
+        .then( user => {
+          const token = generateToken(user)
+          res.status(200).json({user, token})
+        })
     })
     .catch(err => {
       console.log(err)
@@ -28,6 +48,24 @@ function register(req, res) {
 
 function login(req, res) {
   // implement user login
+  const credentials = req.body;
+  if (credentials.username) {
+    usersDb.getUserByUsername(credentials.username)
+      .then( user => {
+        if(user && bcrypt.compareSync(credentials.password, user.password)) {
+          const token = generateToken(user)
+          res.status(200).json({user, token})
+        } else {
+          res.status(401).json({err: "invalid username or password"})
+        }
+      })
+      .catch( err => {
+        res.status(500).json({err: "invalid username or password"})
+      })
+  }
+  else {
+    res.status(400).json({errMessage: "please insert a username"})
+  }
 }
 
 function getJokes(req, res) {
